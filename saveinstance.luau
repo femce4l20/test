@@ -4300,15 +4300,31 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		if not ClassList then -- means first run
 			do -- * Load Region of Déjà Vu
-				local UGCValidationService -- = service.UGCValidationService
 
 				gethiddenproperty_fallback = function(instance, propertyName)
-					if not UGCValidationService then
-						UGCValidationService = service.UGCValidationService
-					end
-					return UGCValidationService:GetPropertyValue(instance, propertyName) -- TODO Sadly there's no way to tell whether value is actually nil or the function just couldn't read it (always returns nil for "Class" category properties)
-					-- TODO `category ~= "Class"` causes WeldConstraint Part1Internal to be read as nil and not get unfiltered. Currently, there are no properties of category "Class" that match the following: NotScriptable, can be read with gethiddenproperty_fallback accurately (it always outputs nil for "Class" category, making that check useless anyway) & don't have a NotScriptableFix.
-				end
+    -- Layer 1: Use the executor's native gethiddenproperty if it was saved before being cleared
+    if old_gethiddenproperty then
+        local ok, result = pcall(old_gethiddenproperty, instance, propertyName)
+        if ok and result ~= nil then
+            return result
+        end
+    end
+
+    -- Layer 2: Direct property index (works for some NotScriptable props at elevated thread identity)
+    do
+        local ok, result = pcall(function()
+            return instance[propertyName]
+        end)
+        if ok and result ~= nil then
+            return result
+        end
+    end
+
+    -- Layer 3: For Optional types (e.g. OptionalCoordinateFrame), nil is a valid "not set" value,
+    -- so return nil explicitly rather than erroring — callers check `Optional` before filtering nil.
+    return nil
+end
+
 				if gethiddenproperty then
 					local o, r = pcall(gethiddenproperty, workspace, "StreamOutBehavior")
 					if not o or r ~= nil and typeof(r) ~= "EnumItem" then -- * Tests if gethiddenproperty is broken
